@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import collector
 import db
 import llm
-from config import LANGUAGES, CATEGORIES
+from config import CATEGORIES, LANGUAGE_STYLE, LANGUAGES
 
 WRITE_SYSTEM = f"""You are a news editor at an online newspaper.
 Write ONE original, neutral, accurate English news article based ONLY on the source reports provided.
@@ -20,8 +20,8 @@ Rules:
 Return ONLY a JSON object: {{"title": str, "summary": str (1-2 sentences), "body": str, "category": one of {CATEGORIES}}}"""
 
 TRANSLATE_SYSTEM = """You are a professional news translator.
-Translate the article into {language}. Keep names, numbers and meaning exact; use a natural journalistic register
-(for Arabic use Modern Standard Arabic). Keep paragraph breaks (blank lines).
+Translate the article into {language}. Keep names, numbers and meaning exact; use a natural journalistic register.
+{style}Keep paragraph breaks (blank lines).
 Return ONLY a JSON object: {{"title": str, "summary": str, "body": str}}"""
 
 
@@ -155,7 +155,10 @@ def filter_by_topic(items, topic, log=print):
 
 
 def translate(en: dict, lang_code: str, s):
-    system = TRANSLATE_SYSTEM.format(language=LANGUAGES[lang_code])
+    style = LANGUAGE_STYLE.get(lang_code, "")
+    if style:
+        style += " "
+    system = TRANSLATE_SYSTEM.format(language=LANGUAGES[lang_code], style=style)
     payload = json.dumps({k: en[k] for k in ("title", "summary", "body")}, ensure_ascii=False)
     return chat_json(system, payload, s, tries=3, max_tokens=6000)
 

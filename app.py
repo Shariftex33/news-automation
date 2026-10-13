@@ -19,14 +19,37 @@ st.set_page_config(
 
 db.init()
 
-page = st.sidebar.radio(
-    "Menu",
-    ["Dashboard", "Review queue", "Published", "Sources", "Settings"],
+TARGET_LANGS = ", ".join(LANGUAGES[code] for code in LANGUAGES if code != "en")
+
+st.html(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@500;700&family=Noto+Sans+Bengali:wght@400;600;700&display=swap');
+[data-testid="stMain"], [data-testid="stSidebar"] {
+  font-family: "Noto Sans Bengali", "Nirmala UI", "Noto Naskh Arabic", "Segoe UI", sans-serif;
+}
+[data-testid="stButton"] > button { min-height: 44px; white-space: normal; }
+[data-testid="stTabs"] button { min-height: 44px; }
+div[data-baseweb="select"] > div { min-height: 44px; }
+@media (max-width: 720px) {
+  [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+  .block-container {
+    padding-left: max(0.8rem, env(safe-area-inset-left)) !important;
+    padding-right: max(0.8rem, env(safe-area-inset-right)) !important;
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom)) !important;
+  }
+  div[data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: 0.55rem; }
+  div[data-testid="stColumn"] { width: 100% !important; min-width: 100% !important; flex: 1 1 100% !important; }
+  [data-testid="stButton"],
+  [data-testid="stElementContainer"]:has(> [data-testid="stButton"]) { width: 100%; }
+  [data-testid="stButton"] > button { width: 100% !important; }
+}
+</style>
+"""
 )
 
-st.sidebar.caption(
-    "Reader site: `streamlit run public_site.py --server.port 8502`"
-)
+PAGES = ["Dashboard", "Review queue", "Published", "Sources", "Settings"]
+page = st.selectbox("Menu", PAGES)
 
 FIELDS = ("title", "summary", "body")
 
@@ -70,6 +93,7 @@ def save_form(aid):
 
 if page == "Dashboard":
     st.title("📰 Newsroom Dashboard")
+    st.caption("Reader site: `streamlit run public_site.py --server.port 8502`")
 
     counts = db.counts()
 
@@ -84,7 +108,7 @@ if page == "Dashboard":
     st.caption(
         f"AI provider: **{settings['provider']}** · "
         "English sources → article written in English → "
-        "translated into Turkish, Arabic and Spanish"
+        f"translated into {TARGET_LANGS}"
     )
 
     topic = st.text_input(
@@ -267,7 +291,7 @@ elif page == "Published":
     st.title("✅ Published")
     st.caption(
         "Each story is written in English, then translated into "
-        "Turkish, Arabic and Spanish. Open an article to read the full text."
+        f"{TARGET_LANGS}. Open an article to read the full text."
     )
 
     articles = db.articles("published")
@@ -362,7 +386,7 @@ elif page == "Sources":
     st.title("📡 News sources (RSS)")
     st.caption(
         "Use English-language feeds. The pipeline writes each story in English, "
-        "then translates it into Turkish, Arabic and Spanish."
+        f"then translates it into {TARGET_LANGS}."
     )
 
     cols = ["id", "name", "url", "category", "active"]
@@ -493,7 +517,7 @@ elif page == "Settings":
             s.get("ollama_model", "qwen2.5:3b"),
             help=(
                 "Run `ollama pull <model>` first. "
-                "For Arabic/Turkish, consider a suitable Qwen model."
+                "For Arabic, Turkish, and Bengali, consider a suitable Qwen model."
             ),
         )
 

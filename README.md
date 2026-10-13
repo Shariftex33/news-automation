@@ -1,10 +1,10 @@
 # News Automation (Streamlit)
 
 Collects news from RSS sources → groups reports of the same story → writes an original article →
-translates to **English, Turkish, Arabic, Spanish** → **an editor approves** → published on the reader site.
+translates to **English, Turkish, Arabic, Spanish, Bengali** → **an editor approves** → published on the reader site.
 
 ```
-RSS feeds ─► collector ─► SQLite ─► cluster same story ─► LLM writes (EN) ─► LLM translates (TR/AR/ES)
+RSS feeds ─► collector ─► SQLite ─► cluster same story ─► LLM writes (EN) ─► LLM translates (TR/AR/ES/BN)
                                                                    │
                          reader site  ◄── publish ◄── editor review (Streamlit admin)
 ```
@@ -32,7 +32,7 @@ Typical flow: Dashboard → **Run full pipeline** → Review queue → edit/appr
 | Provider            | Setup                                                                                                   |
 | ------------------- | ------------------------------------------------------------------------------------------------------- |
 | Claude              | `ANTHROPIC_API_KEY` in `.env`                                                                       |
-| Free local (Ollama) | Install Ollama,`ollama pull qwen2.5:7b` (use `qwen2.5:14b`/`gemma2:9b` for better Arabic/Turkish) |
+| Free local (Ollama) | Install Ollama,`ollama pull qwen2.5:7b` (use `qwen2.5:14b`/`gemma2:9b` for better Arabic/Turkish/Bengali) |
 | OpenAI-compatible   | `OPENAI_API_KEY` in `.env` + base URL/model (OpenAI, Groq, OpenRouter, LM Studio)                   |
 
 Local models are free but translation quality (especially Arabic) is noticeably lower, and small models
