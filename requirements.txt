@@ -1,0 +1,9 @@
+streamlit>=1.40
+feedparser>=6.0
+trafilatura>=1.12
+scikit-learn>=1.4
+requests>=2.31
+anthropic>=0.40
+python-dotenv>=1.0
+apscheduler>=3.10
+pandas>=2.0
