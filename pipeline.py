@@ -167,7 +167,7 @@ def translate(en: dict, lang_code: str, s):
         style += " "
     system = TRANSLATE_SYSTEM.format(language=LANGUAGES[lang_code], style=style)
     payload = json.dumps({k: en[k] for k in ("title", "summary", "body")}, ensure_ascii=False)
-    return chat_json(system, payload, s, tries=1, max_tokens=6000)
+    return chat_json(system, payload, s, tries=3, max_tokens=6000)
 
 
 def translate_all(aid, en, s, log=print):
