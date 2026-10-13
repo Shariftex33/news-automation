@@ -172,9 +172,11 @@ if page == "Dashboard":
         with st.status("Running pipeline...", expanded=True) as status:
             created = pipeline.run_all(st.write, topic.strip())
             status.update(label="Finished", state="complete")
-        if created:
-            st.session_state["open_review"] = created[-1]
+        article_ids = list(created) if isinstance(created, (list, tuple)) else []
+        if article_ids:
+            st.session_state["open_review"] = article_ids[-1]
             st.rerun()
+        st.info("No article was created, so there is nothing to approve.")
 
     if c2.button("📡 Collect only"):
         remember_topic()

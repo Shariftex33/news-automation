@@ -19,10 +19,17 @@ Rules:
 - Body: 3-6 short paragraphs separated by a blank line, 200-400 words.
 Return ONLY a JSON object: {{"title": str, "summary": str (1-2 sentences), "body": str, "category": one of {CATEGORIES}}}"""
 
-TRANSLATE_SYSTEM = """You are a professional news translator.
-Translate the article into {language}. Keep names, numbers and meaning exact; use a natural journalistic register.
-{style}Keep paragraph breaks (blank lines).
-Return ONLY a JSON object: {{"title": str, "summary": str, "body": str}}"""
+TRANSLATE_SYSTEM = """You are a professional news translator fluent in the source and target languages.
+Translate the source news article into {language}.
+Requirements:
+- Preserve the original meaning, facts, dates, names, quotations, and numbers.
+- Do not add facts, opinions, explanations, or unsupported information.
+- Do not summarize or omit any information.
+- Use natural, fluent, grammatically correct {language}.
+- Use standard spelling and appropriate journalistic terminology.
+- Preserve the article's paragraph structure.
+- Return only the translated article, without introductory comments.
+{style}Return ONLY a JSON object: {{"title": str, "summary": str, "body": str}}"""
 
 
 def parse_json(text: str) -> dict:
@@ -160,7 +167,7 @@ def translate(en: dict, lang_code: str, s):
         style += " "
     system = TRANSLATE_SYSTEM.format(language=LANGUAGES[lang_code], style=style)
     payload = json.dumps({k: en[k] for k in ("title", "summary", "body")}, ensure_ascii=False)
-    return chat_json(system, payload, s, tries=3, max_tokens=6000)
+    return chat_json(system, payload, s, tries=1, max_tokens=6000)
 
 
 def translate_all(aid, en, s, log=print):
