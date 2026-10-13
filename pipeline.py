@@ -164,18 +164,20 @@ def translate(en: dict, lang_code: str, s):
 
 
 def translate_all(aid, en, s, log=print):
-    for code in LANGUAGES:
-        if code == "en":
-            continue
+    targets = [code for code in LANGUAGES if code != "en"]
+    total = len(targets)
+    for index, code in enumerate(targets, start=1):
+        name = LANGUAGES[code]
+        log(f"Step {index}/{total}: Translating {name}...")
         try:
             t = translate(en, code, s)
             db.save_text(aid, code, t["title"], t["summary"], t["body"])
-            log(f"   🌐 {LANGUAGES[code]} done")
+            log(f"Step {index}/{total}: {name} saved")
         except Exception as e:
-            log(f"   ❌ {LANGUAGES[code]} failed: {e}")
+            log(f"Step {index}/{total}: {name} skipped ({e}). Other languages continue.")
 
 
-def generate(log=print, topic=None) -> int:
+def generate(log=print, topic=None) -> list:
     s = db.get_settings()
     thr = float(s["similarity"])
     if topic is None:
@@ -185,16 +187,17 @@ def generate(log=print, topic=None) -> int:
     items = [dict(r) for r in db.unprocessed_items(int(s["lookback_hours"]))]
     if not items:
         log("No new items to process.")
-        return 0
+        return []
     items = filter_by_topic(items, topic, log)
     if not items:
         log(f"No unused items about '{topic}'. Other stories were left for a normal run.")
-        return 0
+        return []
     groups = [g for g in cluster(items, thr) if len({x["source_id"] for x in g}) >= int(s["min_sources"])]
     log(f"{len(items)} items -> {len(groups)} candidate stories")
-    recent, made = db.recent_titles(int(s["lookback_hours"]) * 2), 0
+    recent = db.recent_titles(int(s["lookback_hours"]) * 2)
+    created = []
     for g in groups:
-        if made >= int(s["max_articles_per_run"]):
+        if len(created) >= int(s["max_articles_per_run"]):
             break
         ids = [x["id"] for x in g]
         if is_duplicate(g, recent, thr):
@@ -212,15 +215,16 @@ def generate(log=print, topic=None) -> int:
         translate_all(aid, en, s, log)
         db.mark_processed(ids)
         recent.append(en["title"])
-        made += 1
-    log(f"Done. {made} article(s) waiting for review.")
-    return made
+        created.append(aid)
+    log(f"Done. {len(created)} article(s) waiting for review.")
+    return created
 
 
 def run_all(log=print, topic=None):
-    log("📡 Collecting...")
+    log("Step 1: Collecting sources...")
     n = collector.collect(log)
-    log(f"Collected {n} new items.")
+    log(f"Step 1 done. Collected {n} new items.")
+    log("Step 2: Writing articles and translating each language...")
     if topic is None:
         topic = (db.get_settings().get("topic") or "").strip()
     if topic:

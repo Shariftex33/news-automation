@@ -48,14 +48,53 @@ div[data-baseweb="select"] > div { min-height: 44px; }
 """
 )
 
+# Apply navigation before the menu widget exists. Streamlit will not
+# let us change a widget key after that widget has been created.
+open_published = st.session_state.pop("open_published", None)
+if open_published is not None:
+    st.session_state["menu_page"] = "Published"
+    st.session_state["published_article"] = int(open_published)
+    st.session_state["just_published"] = int(open_published)
+
+open_review = st.session_state.pop("open_review", None)
+if open_review is not None:
+    st.session_state["menu_page"] = "Review queue"
+    st.session_state["review_article"] = int(open_review)
+    st.session_state["ask_approval"] = True
+
 PAGES = ["Dashboard", "Review queue", "Published", "Sources", "Settings"]
-page = st.selectbox("Menu", PAGES)
+page = st.selectbox("Menu", PAGES, key="menu_page")
 
 FIELDS = ("title", "summary", "body")
 
 
 def key(f, aid, code):
     return f"{f}_{aid}_{code}"
+
+
+def _text(value):
+    return str(value or "")
+
+
+def bind_field(field, aid, code, stored):
+    """Show the saved text even when a hidden tab sends an empty value back."""
+    widget_key = key(field, aid, code)
+    saved = _text(stored)
+    current = _text(st.session_state.get(widget_key, ""))
+    if widget_key not in st.session_state or (not current.strip() and saved.strip()):
+        st.session_state[widget_key] = saved
+    return widget_key
+
+
+def merged_values(aid, code, stored_row):
+    """Keep a saved translation when the tab widget comes back blank."""
+    values = {}
+    for field in FIELDS:
+        widget_key = key(field, aid, code)
+        edited = _text(st.session_state.get(widget_key, "")) if widget_key in st.session_state else ""
+        previous = _text((stored_row or {}).get(field))
+        values[field] = edited if edited.strip() else previous
+    return values
 
 
 def _paragraphs(body):
@@ -73,11 +112,11 @@ def clear_keys(aid):
 
 
 def save_form(aid):
+    texts = db.get_texts(aid)
     for code in LANGUAGES:
-        values = {
-            f: st.session_state.get(key(f, aid, code), "")
-            for f in FIELDS
-        }
+        values = merged_values(aid, code, texts.get(code))
+        if not any(values[field].strip() for field in FIELDS):
+            continue
         db.save_text(
             aid,
             code,
@@ -131,8 +170,11 @@ if page == "Dashboard":
     ):
         remember_topic()
         with st.status("Running pipeline...", expanded=True) as status:
-            pipeline.run_all(st.write, topic.strip())
+            created = pipeline.run_all(st.write, topic.strip())
             status.update(label="Finished", state="complete")
+        if created:
+            st.session_state["open_review"] = created[-1]
+            st.rerun()
 
     if c2.button("📡 Collect only"):
         remember_topic()
@@ -166,18 +208,32 @@ elif page == "Review queue":
         article["id"]: article["title"] or "(no title)"
         for article in articles
     }
+    pending_ids = list(titles)
+    if st.session_state.get("review_article") not in pending_ids:
+        st.session_state["review_article"] = pending_ids[0]
 
     aid = st.selectbox(
         "Article",
-        list(titles),
+        pending_ids,
         format_func=lambda i: f"#{i} · {titles[i]}",
+        key="review_article",
     )
 
     meta = next(article for article in articles if article["id"] == aid)
     texts = db.get_texts(aid)
+    en_title = _text((texts.get("en") or {}).get("title")) or titles[aid]
 
-    st.caption(
+    headline, approve_col = st.columns([5, 1])
+    headline.subheader(en_title)
+    headline.caption(
         f"Category: **{meta['category']}** · created {meta['created_at']}"
+    )
+    if st.session_state.pop("ask_approval", None):
+        headline.info("This story is ready. Approve it to publish.")
+    approve = approve_col.button(
+        "✅ Approve & publish",
+        type="primary",
+        key=f"approve_{aid}",
     )
 
     with st.expander("Sources used"):
@@ -187,9 +243,12 @@ elif page == "Review queue":
                 f"[{src['title']}]({src['url']})"
             )
 
+    def ready(code):
+        row = texts.get(code) or {}
+        return bool(_text(row.get("title")).strip() and _text(row.get("body")).strip())
+
     tabs = st.tabs([
-        NATIVE_NAMES[code]
-        + ("" if code in texts else " ⚠️")
+        NATIVE_NAMES[code] + ("" if ready(code) else " ⚠️")
         for code in LANGUAGES
     ])
 
@@ -200,38 +259,21 @@ elif page == "Review queue":
                 {"title": "", "summary": "", "body": ""},
             )
 
-            if code not in texts:
+            title_key = bind_field("title", aid, code, article_text.get("title"))
+            summary_key = bind_field("summary", aid, code, article_text.get("summary"))
+            body_key = bind_field("body", aid, code, article_text.get("body"))
+            title_shown = _text(st.session_state.get(title_key)).strip()
+            body_shown = _text(st.session_state.get(body_key)).strip()
+            if not title_shown or not body_shown:
                 st.warning(
                     "Translation missing. Use 'Re-translate from English'."
                 )
 
-            for field in FIELDS:
-                widget_key = key(field, aid, code)
-                stored = article_text.get(field) or ""
-                if stored.strip() and not str(st.session_state.get(widget_key, "")).strip():
-                    st.session_state[widget_key] = stored
+            st.text_input("Title", key=title_key)
+            st.text_area("Summary", height=80, key=summary_key)
+            st.text_area("Body", height=380, key=body_key)
 
-            st.text_input(
-                "Title",
-                article_text["title"],
-                key=key("title", aid, code),
-            )
-
-            st.text_area(
-                "Summary",
-                article_text["summary"],
-                height=80,
-                key=key("summary", aid, code),
-            )
-
-            st.text_area(
-                "Body",
-                article_text["body"],
-                height=380,
-                key=key("body", aid, code),
-            )
-
-    b1, b2, b3, b4 = st.columns(4)
+    b1, b2, b3 = st.columns(3)
 
     if b1.button("💾 Save edits"):
         save_form(aid)
@@ -242,42 +284,63 @@ elif page == "Review queue":
 
         english_text = db.get_texts(aid).get("en")
 
-        if not english_text:
-            st.error("English text is missing. Add the English article first.")
+        if not _text(english_text.get("title") if english_text else "").strip() or not _text(
+            english_text.get("body") if english_text else ""
+        ).strip():
+            st.error("English title and body are required. Other languages are left as they are.")
         else:
-            with st.spinner("Translating..."):
+            with st.status("Translating...", expanded=True) as status:
                 pipeline.translate_all(
                     aid,
                     english_text,
                     db.get_settings(),
+                    st.write,
                 )
+                status.update(label="Translation finished", state="complete")
 
             clear_keys(aid)
+            st.session_state["ask_approval"] = True
             st.rerun()
 
-    if b3.button("✅ Approve & publish", type="primary"):
-        missing = [
-            LANGUAGES[code]
-            for code in LANGUAGES
-            if not st.session_state.get(
-                key("title", aid, code), ""
-            ).strip()
-            or not st.session_state.get(
-                key("body", aid, code), ""
-            ).strip()
-        ]
+    if approve:
+        stored_texts = db.get_texts(aid)
+        ready = []
+        skipped = []
+        for code in LANGUAGES:
+            values = merged_values(aid, code, stored_texts.get(code))
+            if values["title"].strip() and values["body"].strip():
+                ready.append((code, values))
+            else:
+                skipped.append(LANGUAGES[code])
 
-        if missing:
-            st.error(
-                "Fill in title and body for: " + ", ".join(missing)
-            )
+        if not any(code == "en" for code, _ in ready):
+            st.error("English title and body are required. Other languages were not blocked.")
         else:
-            save_form(aid)
-            db.set_status(aid, "published")
+            total = len(ready)
+            with st.status("Publishing...", expanded=True) as status:
+                for index, (code, values) in enumerate(ready, start=1):
+                    st.write(f"Step {index}/{total}: Saving {LANGUAGES[code]}")
+                    db.save_text(
+                        aid,
+                        code,
+                        values["title"],
+                        values["summary"],
+                        values["body"],
+                    )
+                for name in skipped:
+                    st.write(f"Skipped {name}: empty. Other languages still publish.")
+                db.set_status(aid, "published")
+                st.write("Published")
+                status.update(label="Published", state="complete")
             clear_keys(aid)
+            note = "Published."
+            if skipped:
+                note += " Empty languages were skipped: " + ", ".join(skipped) + "."
+            st.session_state["publish_note"] = note
+            st.session_state["open_published"] = aid
             st.rerun()
 
-    if b4.button("🗑️ Reject"):
+    if b3.button("🗑️ Reject"):
         db.set_status(aid, "rejected")
         clear_keys(aid)
         st.rerun()
@@ -290,8 +353,8 @@ elif page == "Review queue":
 elif page == "Published":
     st.title("✅ Published")
     st.caption(
-        "Each story is written in English, then translated into "
-        f"{TARGET_LANGS}. Open an article to read the full text."
+        "Every published story is listed here. Open Read for the full text in "
+        f"{TARGET_LANGS}."
     )
 
     articles = db.articles("published")
@@ -300,82 +363,77 @@ elif page == "Published":
         st.info("Nothing published yet.")
         st.stop()
 
-    titles = {
-        article["id"]: article["title"] or "(no title)"
-        for article in articles
-    }
+    focus = st.session_state.get("published_article")
+    if st.session_state.pop("just_published", None):
+        st.success(st.session_state.pop("publish_note", "Published."))
 
-    aid = st.selectbox(
-        "Article",
-        list(titles),
-        format_func=lambda i: f"#{i} · {titles[i]}",
-    )
+    for article in articles:
+        texts = db.get_texts(article["id"])
+        title = article["title"] or "(no title)"
+        when = (article["published_at"] or "")[:16].replace("T", " ")
+        ready_names = []
+        for code in LANGUAGES:
+            row = texts.get(code) or {}
+            label = NATIVE_NAMES[code]
+            if not (_text(row.get("title")).strip() and _text(row.get("body")).strip()):
+                label += " ⚠️"
+            ready_names.append(label)
 
-    meta = next(article for article in articles if article["id"] == aid)
-    texts = db.get_texts(aid)
+        with st.container(border=True):
+            head, action = st.columns([5, 1])
+            head.caption(f"**{article['category']}** · {when}")
+            head.subheader(title)
+            if article.get("summary"):
+                head.write(article["summary"])
+            head.caption(" · ".join(ready_names))
+            if action.button("Unpublish", key=f"unpublish_{article['id']}"):
+                db.set_status(article["id"], "pending")
+                st.rerun()
 
-    head, action = st.columns([5, 1])
-    head.caption(
-        f"Category: **{meta['category']}** · published {meta['published_at']}"
-    )
-
-    if action.button("Unpublish", key=f"unpublish_{aid}"):
-        db.set_status(aid, "pending")
-        st.rerun()
-
-    tabs = st.tabs([
-        NATIVE_NAMES[code] + ("" if code in texts else " ⚠️")
-        for code in LANGUAGES
-    ])
-
-    for tab, code in zip(tabs, LANGUAGES):
-        with tab:
-            article_text = texts.get(code)
-
-            body = (article_text.get("body") or "").strip() if article_text else ""
-            title = (article_text.get("title") or "").strip() if article_text else ""
-
-            if not body:
-                st.warning(
-                    "This language is missing. "
-                    "Send the article back to the review queue and re-translate from English."
-                    if code != "en"
-                    else "English text is missing."
-                )
-                continue
-
-            if code != "en" and (len(body) < 80 or len(title) < 8):
-                st.warning(
-                    "This translation is only a fragment. "
-                    "Unpublish the article, then use Re-translate from English in the review queue."
-                )
-
-            direction = "rtl" if code in RTL else "ltr"
-            align = "right" if code in RTL else "left"
-            summary = (article_text.get("summary") or "").strip()
-            body_html = "".join(
-                f"<p style='font-size:1.05rem;line-height:1.75;margin:0 0 1rem 0'>"
-                f"{html.escape(part)}</p>"
-                for part in _paragraphs(article_text.get("body") or "")
-            )
-            summary_html = (
-                f"<p style='font-size:1.05rem'><i>{html.escape(summary)}</i></p>"
-                if summary
-                else ""
-            )
-
-            st.markdown(
-                f'<div dir="{direction}" style="text-align:{align}">'
-                f"<h2>{html.escape(article_text.get('title') or '')}</h2>"
-                f"{summary_html}{body_html}</div>",
-                unsafe_allow_html=True,
-            )
-
-    with st.expander("Sources used"):
-        for src in db.get_sources(aid):
-            st.markdown(
-                f"- **{src['name']}** — [{src['title']}]({src['url']})"
-            )
+            with st.expander("Read", expanded=article["id"] == focus):
+                tabs = st.tabs([
+                    NATIVE_NAMES[code] + ("" if code in texts else " ⚠️")
+                    for code in LANGUAGES
+                ])
+                for tab, code in zip(tabs, LANGUAGES):
+                    with tab:
+                        article_text = texts.get(code)
+                        body = (article_text.get("body") or "").strip() if article_text else ""
+                        lang_title = (article_text.get("title") or "").strip() if article_text else ""
+                        if not body:
+                            st.warning(
+                                "This language is missing. "
+                                "Send the article back to the review queue and re-translate from English."
+                                if code != "en"
+                                else "English text is missing."
+                            )
+                            continue
+                        if code != "en" and (len(body) < 80 or len(lang_title) < 8):
+                            st.warning(
+                                "This translation is only a fragment. "
+                                "Unpublish the article, then use Re-translate from English in the review queue."
+                            )
+                        direction = "rtl" if code in RTL else "ltr"
+                        align = "right" if code in RTL else "left"
+                        summary = (article_text.get("summary") or "").strip()
+                        body_html = "".join(
+                            f"<p style='font-size:1.05rem;line-height:1.75;margin:0 0 1rem 0'>"
+                            f"{html.escape(part)}</p>"
+                            for part in _paragraphs(article_text.get("body") or "")
+                        )
+                        summary_html = (
+                            f"<p style='font-size:1.05rem'><i>{html.escape(summary)}</i></p>"
+                            if summary
+                            else ""
+                        )
+                        st.markdown(
+                            f'<div dir="{direction}" style="text-align:{align}">'
+                            f"<h2>{html.escape(article_text.get('title') or '')}</h2>"
+                            f"{summary_html}{body_html}</div>",
+                            unsafe_allow_html=True,
+                        )
+                for src in db.get_sources(article["id"]):
+                    st.markdown(f"- **{src['name']}** — [{src['title']}]({src['url']})")
 
 
 # ------------------------------------------------------------------

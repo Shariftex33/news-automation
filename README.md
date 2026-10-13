@@ -29,11 +29,11 @@ Typical flow: Dashboard → **Run full pipeline** → Review queue → edit/appr
 
 ## Choosing the AI engine (Settings page, switch any time)
 
-| Provider            | Setup                                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------------- |
-| Claude              | `ANTHROPIC_API_KEY` in `.env`                                                                       |
+| Provider            | Setup                                                                                                           |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Claude              | `ANTHROPIC_API_KEY` in `.env`                                                                               |
 | Free local (Ollama) | Install Ollama,`ollama pull qwen2.5:7b` (use `qwen2.5:14b`/`gemma2:9b` for better Arabic/Turkish/Bengali) |
-| OpenAI-compatible   | `OPENAI_API_KEY` in `.env` + base URL/model (OpenAI, Groq, OpenRouter, LM Studio)                   |
+| OpenAI-compatible   | `OPENAI_API_KEY` in `.env` + base URL/model (OpenAI, Groq, OpenRouter, LM Studio)                           |
 
 Local models are free but translation quality (especially Arabic) is noticeably lower, and small models
 sometimes return broken JSON. The pipeline retries once; failed translations are flagged ⚠️ in the review tab
